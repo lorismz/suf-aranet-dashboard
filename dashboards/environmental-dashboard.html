@@ -423,9 +423,21 @@ const first = parse(DATA.first), last = parse(DATA.last);
 document.getElementById("period").textContent =
   `${DATA.readings.toLocaleString("en-GB")} readings · ${fmtFull(first)} – ${fmtFull(last)} · last reading ${fmtTime(last)}`;
 
+// Tell the Weebly page how tall the dashboard is, so its iframe can fit it exactly
+function reportHeight() {
+  if (window.parent === window) return;
+  const h = Math.ceil(document.documentElement.getBoundingClientRect().height);
+  window.parent.postMessage({ type: "suf-dashboard-height", height: h }, "*");
+}
+
 render();
+reportHeight();
 let resizeTimer;
-window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(render, 150); });
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { render(); reportHeight(); }, 150);
+});
+window.addEventListener("load", reportHeight);
 </script>
 </body>
 </html>

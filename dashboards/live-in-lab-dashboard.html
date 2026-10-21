@@ -101,7 +101,9 @@
   .card.wide { grid-column: 1 / -1; }
 
   @media (max-width: 760px) {
+    .wrap { padding: 8px 0 24px; }
     .grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+    .card { padding: 16px 14px 12px; }
     .value { font-size: 26px; }
     .clock .value { font-size: 30px; }
     .schedule-grid { grid-template-columns: minmax(0, 1fr); }
@@ -222,7 +224,7 @@ function visible() {
 // Line or bar chart drawn as inline SVG
 function draw(id, pts, opt) {
   const box = document.getElementById(id);
-  const W = Math.max(box.clientWidth, 260), H = 190;
+  const W = box.clientWidth || 300, H = 190;
   const m = { l: 40, r: 8, t: 8, b: 22 };
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
   // Daily view also draws the min–max band, so the axis must cover it
@@ -259,7 +261,7 @@ function draw(id, pts, opt) {
   const x = i => xt(tm[i]);
   const y = v => m.t + ih - (v - lo) / (hi - lo) * ih;
 
-  let s = `<svg width="${W}" height="${H}">`;
+  let s = `<svg width="${W}" height="${H}"><defs><clipPath id="clip-${id}"><rect x="${m.l}" y="${m.t}" width="${iw}" height="${ih}"/></clipPath></defs>`;
   ticks.forEach(t => {
     s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}" stroke="${css("--grid")}" stroke-dasharray="${t === lo ? 0 : "2 3"}"/>`;
     s += `<text x="${m.l - 6}" y="${y(t) + 3}" text-anchor="end">${t}${opt.tickUnit || ""}</text>`;
@@ -279,6 +281,7 @@ function draw(id, pts, opt) {
     s += `<text x="${m.l + j * iw / 4}" y="${H - 6}" text-anchor="${anchor}">${fmtDay(new Date(t))}</text>`;
   }
 
+  s += `<g clip-path="url(#clip-${id})">`;
   if (opt.bars) {
     const bw = Math.max(1, step * k * 0.7);
     pts.forEach((p, i) => {
@@ -309,6 +312,7 @@ function draw(id, pts, opt) {
       s += `<line x1="${x(i)}" y1="${y(a)}" x2="${x(i + 1)}" y2="${y(b)}" stroke="${col}" stroke-width="2" stroke-linecap="round"/>`;
     }
   }
+  s += `</g>`;
   s += `<line class="hover" x1="0" x2="0" y1="${m.t}" y2="${m.t + ih}" stroke="${css("--muted")}" stroke-dasharray="3 3" visibility="hidden"/>`;
   s += `<circle class="hover" r="3.5" fill="${css("--text")}" visibility="hidden"/>`;
   s += `</svg><div class="tip"></div>`;

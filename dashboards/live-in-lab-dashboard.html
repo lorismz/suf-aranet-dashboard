@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KTH Live-In Lab — Grönska cabinet air conditions</title>
+<style>
+  :root {
+    --green: #2F6B4F;
+    --blue: #004791;
+    --pale: #EEF5EF;
+    --border: #D7E5DA;
+    --text: #1F2933;
+    --muted: #5B6570;
+    --grid: #E8EEEA;
+    --ok: #009A44;
+    --warn: #F28C00;
+    --bad: #D71920;
+    --temp: #C95F38;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #FFFFFF;
+    color: var(--text);
+    font-family: "Open Sans", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 8px 16px 24px; }
+
+
+  .controls {
+    display: flex; flex-wrap: wrap; align-items: center;
+    gap: 12px 24px; margin: 20px 0 16px; font-size: 12px;
+  }
+  .group { display: flex; align-items: center; gap: 6px; }
+  .group > span { color: var(--muted); margin-right: 2px; }
+  .controls button {
+    font: inherit; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border); background: #FFFFFF; color: var(--muted);
+  }
+  .controls button:hover { background: var(--pale); }
+  .controls button.on { background: var(--green); border-color: var(--green); color: #FFFFFF; }
+
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+  .card {
+    background: #FFFFFF; border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px 20px 14px; min-width: 0;
+  }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+  .label { font-size: 12px; color: var(--muted); }
+  .value {
+    font-size: 30px; letter-spacing: -0.03em; margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .value small { font-size: 16px; color: var(--muted); letter-spacing: 0; margin-left: 2px; }
+  .side { font-size: 12px; color: var(--muted); text-align: right; line-height: 1.5; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
+  .chart { position: relative; width: 100%; }
+  .chart svg { display: block; overflow: visible; }
+  .chart text { font-size: 10px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+  .tip {
+    position: absolute; pointer-events: none; background: var(--text); color: #FFFFFF;
+    font-size: 11px; padding: 5px 8px; border-radius: 6px; white-space: nowrap;
+    transform: translate(-50%, -100%); display: none; font-variant-numeric: tabular-nums;
+  }
+
+  .clock { text-align: center; margin: 40px 0 8px; }
+  .clock .label { font-size: 13px; }
+  .clock .value { font-size: 40px; margin-top: 6px; }
+  .clock .note { margin-top: 6px; }
+
+  .gap-legend {
+    display: flex; align-items: center; gap: 10px; margin: -4px 0 16px;
+    font-size: 12px; color: var(--muted); line-height: 1.45;
+  }
+  .gap-swatch {
+    flex: none; display: inline-flex; justify-content: center; align-items: flex-start;
+    width: 18px; height: 28px; padding-top: 2px; background: var(--pale); border-radius: 2px;
+  }
+  .gap-swatch b { font-size: 8px; font-weight: 400; color: var(--muted); }
+
+  /* Operating schedule: same format as the v1 dashboard */
+  .schedule { margin-top: 8px; }
+  .schedule h3 { font-size: 18px; font-weight: 700; margin: 0 0 10px; }
+  .schedule-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .schedule-card {
+    background: #FFFFFF; border: 1px solid var(--border); border-left: 5px solid var(--blue);
+    border-radius: 12px; padding: 14px 16px;
+  }
+  .schedule-card.light { border-left-color: var(--warn); }
+  .schedule-card.fan { border-left-color: var(--blue); }
+  .schedule-card.irrigation { border-left-color: var(--green); }
+  .schedule-label {
+    font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--green); margin-bottom: 8px;
+  }
+  .schedule-value { font-size: 19px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; }
+  .schedule-note { font-size: 12px; color: var(--muted); margin-top: 5px; line-height: 1.35; }
+
+  .card.wide { grid-column: 1 / -1; }
+
+  @media (max-width: 760px) {
+    .grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+    .value { font-size: 26px; }
+    .clock .value { font-size: 30px; }
+    .schedule-grid { grid-template-columns: minmax(0, 1fr); }
+    .schedule-value { font-size: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  
+
+  <div class="controls">
+    <div class="group" id="range">
+      <span>Range</span>
+      <button data-v="7">7d</button>
+      <button data-v="30" class="on">30d</button>
+      <button data-v="90">90d</button>
+      <button data-v="all">All-time</button>
+    </div>
+    <div class="group" id="res">
+      <span>Resolution</span>
+      <button data-v="daily">Daily</button>
+      <button data-v="hourly" class="on">Hourly</button>
+    </div>
+  </div>
+
+  <div class="gap-legend">
+    <span class="gap-swatch"><b>8d</b></span>
+    No data (sensor not logging). The number is the length of the gap in days.
+    Gaps are shortened so the charts use the full width: the time axis is not to scale across them.
+  </div>
+
+  <div class="grid">
+    <div class="card" id="card-co2">
+      <div class="head">
+        <div><div class="label">Average CO₂</div><div class="value" id="v-co2"></div></div>
+        <div class="side" id="s-co2"></div>
+      </div>
+      <div class="chart" id="c-co2"></div>
+      <div class="note">Dashed lines at 800 and 1200 ppm.</div>
+    </div>
+    <div class="card" id="card-temp">
+      <div class="head">
+        <div><div class="label">Average temperature</div><div class="value" id="v-temp"></div></div>
+        <div class="side" id="s-temp"></div>
+      </div>
+      <div class="chart" id="c-temp"></div>
+    </div>
+    <div class="card">
+      <div class="head">
+        <div><div class="label">Average relative humidity</div><div class="value" id="v-rh"></div></div>
+        <div class="side" id="s-rh"></div>
+      </div>
+      <div class="chart" id="c-rh"></div>
+    </div>
+    <div class="card">
+      <div class="head">
+        <div><div class="label">Time above 1200 ppm CO₂</div><div class="value" id="v-high"></div></div>
+        <div class="side" id="s-high"></div>
+      </div>
+      <div class="chart" id="c-high"></div>
+    </div>
+  </div>
+
+  <div class="clock">
+    <div class="label">The sensor has been logging for</div>
+    <div class="value" id="logged"></div>
+    <div class="note" id="period"></div>
+  </div>
+
+
+</div>
+
+<script>
+const DATA = {"hourly":[{"t":"2026-10-03T05:00","co2":476.0,"co2_min":467.0,"co2_max":487.0,"co2_n":7,"rh":62.0,"rh_min":62.0,"rh_max":62.0,"rh_n":7,"high_h":0.0},{"t":"2026-10-03T06:00","co2":478.58,"co2_min":471.0,"co2_max":487.0,"co2_n":12,"rh":62.0,"rh_min":62.0,"rh_max":62.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-03T07:00","co2":473.75,"co2_min":454.0,"co2_max":485.0,"co2_n":12,"rh":62.0,"rh_min":62.0,"rh_max":62.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-03T08:00","co2":481.25,"co2_min":469.0,"co2_max":488.0,"co2_n":12,"rh":62.0,"rh_min":62.0,"rh_max":62.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-03T09:00","co2":473.5,"co2_min":463.0,"co2_max":484.0,"co2_n":12,"rh":62.0,"rh_min":62.0,"rh_max":62.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-03T10:00","co2":474.92,"co2_min":463.0,"co2_max":487.0,"co2_n":12,"rh":61.5,"rh_min":61.0,"rh_max":62.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-03T11:00","co2":473.92,"co2_min":467.0,"co2_max":480.0,"co2_n":12,"rh":61.0,"rh_min":61.0,"rh_max":61.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-03T12:00","co2":477.0,"co2_min":466.0,"co2_max":488.0,"co2_n":12,"rh":61.0,"rh_min":61.0,"rh_max":61.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-03T13:00","co2":475.25,"co2_min":466.0,"co2_max":485.0,"co2_n":12,"rh":60.67,"rh_min":60.0,"rh_max":61.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-03T14:00","co2":475.75,"co2_min":465.0,"co2_max":484.0,"co2_n":12,"rh":60.0,"rh_min":60.0,"rh_max":60.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-03T15:00","co2":472.67,"co2_min":455.0,"co2_max":484.0,"co2_n":12,"rh":60.0,"rh_min":60.0,"rh_max":60.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-03T16:00","co2":469.33,"co2_min":455.0,"co2_max":480.0,"co2_n":12,"rh":60.0,"rh_min":60.0,"rh_max":60.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-03T17:00","co2":469.92,"co2_min":452.0,"co2_max":483.0,"co2_n":12,"rh":59.42,"rh_min":59.0,"rh_max":60.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-03T18:00","co2":467.33,"co2_min":454.0,"co2_max":472.0,"co2_n":12,"rh":59.0,"rh_min":59.0,"rh_max":59.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-03T19:00","co2":467.08,"co2_min":452.0,"co2_max":482.0,"co2_n":12,"rh":59.0,"rh_min":59.0,"rh_max":59.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-03T20:00","co2":466.5,"co2_min":460.0,"co2_max":480.0,"co2_n":12,"rh":58.83,"rh_min":58.0,"rh_max":59.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-03T21:00","co2":464.67,"co2_min":455.0,"co2_max":475.0,"co2_n":12,"rh":58.0,"rh_min":58.0,"rh_max":58.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-03T22:00","co2":469.5,"co2_min":453.0,"co2_max":479.0,"co2_n":12,"rh":58.0,"rh_min":58.0,"rh_max":58.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-03T23:00","co2":473.42,"co2_min":467.0,"co2_max":483.0,"co2_n":12,"rh":58.0,"rh_min":58.0,"rh_max":58.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T00:00","co2":470.58,"co2_min":461.0,"co2_max":480.0,"co2_n":12,"rh":58.0,"rh_min":58.0,"rh_max":58.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T01:00","co2":463.58,"co2_min":449.0,"co2_max":482.0,"co2_n":12,"rh":57.08,"rh_min":57.0,"rh_max":58.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T02:00","co2":460.0,"co2_min":452.0,"co2_max":473.0,"co2_n":12,"rh":57.0,"rh_min":57.0,"rh_max":57.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T03:00","co2":460.5,"co2_min":453.0,"co2_max":466.0,"co2_n":12,"rh":57.0,"rh_min":57.0,"rh_max":57.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T04:00","co2":460.25,"co2_min":450.0,"co2_max":470.0,"co2_n":12,"rh":57.0,"rh_min":57.0,"rh_max":57.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T05:00","co2":465.08,"co2_min":458.0,"co2_max":474.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T06:00","co2":467.92,"co2_min":454.0,"co2_max":475.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T07:00","co2":466.17,"co2_min":456.0,"co2_max":474.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T08:00","co2":465.5,"co2_min":456.0,"co2_max":472.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T09:00","co2":469.42,"co2_min":459.0,"co2_max":486.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T10:00","co2":468.58,"co2_min":458.0,"co2_max":478.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T11:00","co2":471.0,"co2_min":464.0,"co2_max":482.0,"co2_n":12,"rh":56.08,"rh_min":56.0,"rh_max":57.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T12:00","co2":471.5,"co2_min":460.0,"co2_max":482.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T13:00","co2":469.33,"co2_min":463.0,"co2_max":475.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T14:00","co2":469.17,"co2_min":458.0,"co2_max":480.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T15:00","co2":470.83,"co2_min":464.0,"co2_max":484.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T16:00","co2":464.83,"co2_min":453.0,"co2_max":476.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T17:00","co2":464.5,"co2_min":458.0,"co2_max":473.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T18:00","co2":464.25,"co2_min":454.0,"co2_max":472.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T19:00","co2":466.92,"co2_min":455.0,"co2_max":475.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T20:00","co2":472.33,"co2_min":458.0,"co2_max":482.0,"co2_n":12,"rh":55.0,"rh_min":55.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T21:00","co2":474.5,"co2_min":466.0,"co2_max":484.0,"co2_n":12,"rh":54.58,"rh_min":54.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T22:00","co2":472.92,"co2_min":463.0,"co2_max":478.0,"co2_n":12,"rh":54.0,"rh_min":54.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-04T23:00","co2":474.92,"co2_min":466.0,"co2_max":482.0,"co2_n":12,"rh":53.25,"rh_min":53.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T00:00","co2":470.5,"co2_min":460.0,"co2_max":485.0,"co2_n":12,"rh":53.0,"rh_min":53.0,"rh_max":53.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T01:00","co2":469.5,"co2_min":457.0,"co2_max":479.0,"co2_n":12,"rh":53.0,"rh_min":53.0,"rh_max":53.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T02:00","co2":466.33,"co2_min":458.0,"co2_max":473.0,"co2_n":12,"rh":53.0,"rh_min":53.0,"rh_max":53.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T03:00","co2":463.92,"co2_min":456.0,"co2_max":483.0,"co2_n":12,"rh":53.0,"rh_min":53.0,"rh_max":53.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T04:00","co2":465.67,"co2_min":459.0,"co2_max":473.0,"co2_n":12,"rh":53.0,"rh_min":53.0,"rh_max":53.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T05:00","co2":462.75,"co2_min":450.0,"co2_max":472.0,"co2_n":12,"rh":53.08,"rh_min":53.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T06:00","co2":460.0,"co2_min":453.0,"co2_max":468.0,"co2_n":12,"rh":54.0,"rh_min":54.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T07:00","co2":461.0,"co2_min":447.0,"co2_max":467.0,"co2_n":12,"rh":54.0,"rh_min":54.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T08:00","co2":459.25,"co2_min":449.0,"co2_max":467.0,"co2_n":12,"rh":54.0,"rh_min":54.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T09:00","co2":465.33,"co2_min":455.0,"co2_max":476.0,"co2_n":12,"rh":54.0,"rh_min":54.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T10:00","co2":463.75,"co2_min":450.0,"co2_max":470.0,"co2_n":12,"rh":55.0,"rh_min":55.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T11:00","co2":467.08,"co2_min":454.0,"co2_max":479.0,"co2_n":12,"rh":55.0,"rh_min":55.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T12:00","co2":469.83,"co2_min":461.0,"co2_max":481.0,"co2_n":12,"rh":55.0,"rh_min":55.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T13:00","co2":490.58,"co2_min":473.0,"co2_max":503.0,"co2_n":12,"rh":55.67,"rh_min":55.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T14:00","co2":504.5,"co2_min":494.0,"co2_max":511.0,"co2_n":12,"rh":56.08,"rh_min":56.0,"rh_max":57.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T15:00","co2":508.0,"co2_min":499.0,"co2_max":516.0,"co2_n":12,"rh":57.08,"rh_min":57.0,"rh_max":58.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T16:00","co2":533.83,"co2_min":520.0,"co2_max":544.0,"co2_n":12,"rh":58.33,"rh_min":58.0,"rh_max":59.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T17:00","co2":538.08,"co2_min":531.0,"co2_max":549.0,"co2_n":12,"rh":59.0,"rh_min":59.0,"rh_max":59.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T18:00","co2":524.67,"co2_min":516.0,"co2_max":534.0,"co2_n":12,"rh":59.5,"rh_min":59.0,"rh_max":60.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T19:00","co2":501.5,"co2_min":484.0,"co2_max":517.0,"co2_n":12,"rh":60.08,"rh_min":60.0,"rh_max":61.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T20:00","co2":487.08,"co2_min":475.0,"co2_max":499.0,"co2_n":12,"rh":61.0,"rh_min":61.0,"rh_max":61.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T21:00","co2":482.92,"co2_min":469.0,"co2_max":495.0,"co2_n":12,"rh":61.0,"rh_min":61.0,"rh_max":61.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T22:00","co2":492.75,"co2_min":484.0,"co2_max":505.0,"co2_n":12,"rh":60.33,"rh_min":60.0,"rh_max":61.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-05T23:00","co2":492.92,"co2_min":482.0,"co2_max":505.0,"co2_n":12,"rh":60.0,"rh_min":60.0,"rh_max":60.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T00:00","co2":486.0,"co2_min":476.0,"co2_max":498.0,"co2_n":12,"rh":60.0,"rh_min":60.0,"rh_max":60.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T01:00","co2":472.92,"co2_min":456.0,"co2_max":483.0,"co2_n":12,"rh":60.0,"rh_min":60.0,"rh_max":60.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T02:00","co2":469.5,"co2_min":463.0,"co2_max":483.0,"co2_n":12,"rh":60.0,"rh_min":60.0,"rh_max":60.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T03:00","co2":465.5,"co2_min":454.0,"co2_max":478.0,"co2_n":12,"rh":59.75,"rh_min":59.0,"rh_max":60.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T04:00","co2":463.75,"co2_min":453.0,"co2_max":471.0,"co2_n":12,"rh":59.0,"rh_min":59.0,"rh_max":59.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T05:00","co2":462.0,"co2_min":449.0,"co2_max":474.0,"co2_n":12,"rh":58.58,"rh_min":58.0,"rh_max":59.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T06:00","co2":461.67,"co2_min":456.0,"co2_max":466.0,"co2_n":12,"rh":57.83,"rh_min":57.0,"rh_max":58.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T07:00","co2":456.58,"co2_min":446.0,"co2_max":469.0,"co2_n":12,"rh":56.83,"rh_min":56.0,"rh_max":57.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T08:00","co2":455.5,"co2_min":443.0,"co2_max":460.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T09:00","co2":456.83,"co2_min":447.0,"co2_max":471.0,"co2_n":12,"rh":55.17,"rh_min":55.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T10:00","co2":464.33,"co2_min":449.0,"co2_max":478.0,"co2_n":12,"rh":54.58,"rh_min":54.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T11:00","co2":488.25,"co2_min":471.0,"co2_max":506.0,"co2_n":12,"rh":54.0,"rh_min":54.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T12:00","co2":511.33,"co2_min":504.0,"co2_max":523.0,"co2_n":12,"rh":53.17,"rh_min":53.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T13:00","co2":555.25,"co2_min":506.0,"co2_max":691.0,"co2_n":12,"rh":52.42,"rh_min":51.0,"rh_max":53.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T14:00","co2":645.75,"co2_min":611.0,"co2_max":676.0,"co2_n":12,"rh":49.42,"rh_min":49.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T15:00","co2":682.17,"co2_min":672.0,"co2_max":693.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T16:00","co2":674.08,"co2_min":659.0,"co2_max":690.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T17:00","co2":635.08,"co2_min":609.0,"co2_max":663.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T18:00","co2":582.42,"co2_min":548.0,"co2_max":611.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T19:00","co2":531.58,"co2_min":506.0,"co2_max":562.0,"co2_n":12,"rh":48.08,"rh_min":48.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T20:00","co2":488.92,"co2_min":464.0,"co2_max":518.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T21:00","co2":476.58,"co2_min":462.0,"co2_max":486.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T22:00","co2":472.0,"co2_min":464.0,"co2_max":483.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-06T23:00","co2":472.0,"co2_min":465.0,"co2_max":484.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T00:00","co2":466.75,"co2_min":460.0,"co2_max":475.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T01:00","co2":467.67,"co2_min":461.0,"co2_max":475.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T02:00","co2":462.58,"co2_min":458.0,"co2_max":470.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T03:00","co2":463.17,"co2_min":451.0,"co2_max":476.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T04:00","co2":459.67,"co2_min":447.0,"co2_max":470.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T05:00","co2":459.5,"co2_min":456.0,"co2_max":468.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T06:00","co2":463.17,"co2_min":453.0,"co2_max":472.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T07:00","co2":456.83,"co2_min":447.0,"co2_max":469.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T08:00","co2":458.25,"co2_min":448.0,"co2_max":464.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T09:00","co2":461.75,"co2_min":454.0,"co2_max":474.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T10:00","co2":460.08,"co2_min":450.0,"co2_max":470.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T11:00","co2":466.92,"co2_min":455.0,"co2_max":477.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T12:00","co2":470.75,"co2_min":462.0,"co2_max":480.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T13:00","co2":470.0,"co2_min":458.0,"co2_max":477.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T14:00","co2":468.5,"co2_min":457.0,"co2_max":479.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T15:00","co2":467.08,"co2_min":460.0,"co2_max":483.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T16:00","co2":460.58,"co2_min":453.0,"co2_max":470.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T17:00","co2":456.17,"co2_min":449.0,"co2_max":467.0,"co2_n":12,"rh":46.75,"rh_min":46.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T18:00","co2":453.58,"co2_min":450.0,"co2_max":461.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T19:00","co2":450.08,"co2_min":444.0,"co2_max":456.0,"co2_n":12,"rh":45.75,"rh_min":45.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T20:00","co2":447.75,"co2_min":432.0,"co2_max":458.0,"co2_n":12,"rh":45.0,"rh_min":45.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T21:00","co2":454.33,"co2_min":441.0,"co2_max":464.0,"co2_n":12,"rh":45.0,"rh_min":45.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T22:00","co2":458.92,"co2_min":442.0,"co2_max":469.0,"co2_n":12,"rh":45.0,"rh_min":45.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-07T23:00","co2":462.0,"co2_min":449.0,"co2_max":471.0,"co2_n":12,"rh":45.0,"rh_min":45.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T00:00","co2":462.08,"co2_min":455.0,"co2_max":473.0,"co2_n":12,"rh":45.0,"rh_min":45.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T01:00","co2":466.5,"co2_min":458.0,"co2_max":477.0,"co2_n":12,"rh":45.0,"rh_min":45.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T02:00","co2":470.67,"co2_min":461.0,"co2_max":482.0,"co2_n":12,"rh":45.17,"rh_min":45.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T03:00","co2":464.42,"co2_min":454.0,"co2_max":474.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T04:00","co2":464.33,"co2_min":445.0,"co2_max":474.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T05:00","co2":465.92,"co2_min":457.0,"co2_max":478.0,"co2_n":12,"rh":46.75,"rh_min":46.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T06:00","co2":465.75,"co2_min":457.0,"co2_max":474.0,"co2_n":12,"rh":47.08,"rh_min":47.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T07:00","co2":461.33,"co2_min":453.0,"co2_max":469.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T08:00","co2":461.67,"co2_min":454.0,"co2_max":471.0,"co2_n":12,"rh":48.67,"rh_min":48.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T09:00","co2":464.08,"co2_min":454.0,"co2_max":474.0,"co2_n":12,"rh":48.58,"rh_min":48.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T10:00","co2":466.17,"co2_min":455.0,"co2_max":477.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T11:00","co2":459.83,"co2_min":452.0,"co2_max":469.0,"co2_n":12,"rh":49.08,"rh_min":49.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T12:00","co2":459.0,"co2_min":444.0,"co2_max":472.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T13:00","co2":461.75,"co2_min":447.0,"co2_max":474.0,"co2_n":12,"rh":50.17,"rh_min":50.0,"rh_max":51.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T14:00","co2":512.25,"co2_min":481.0,"co2_max":548.0,"co2_n":12,"rh":51.08,"rh_min":51.0,"rh_max":52.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T15:00","co2":553.25,"co2_min":532.0,"co2_max":580.0,"co2_n":12,"rh":52.0,"rh_min":52.0,"rh_max":52.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T16:00","co2":552.67,"co2_min":541.0,"co2_max":560.0,"co2_n":12,"rh":52.0,"rh_min":52.0,"rh_max":52.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T17:00","co2":539.0,"co2_min":524.0,"co2_max":550.0,"co2_n":12,"rh":52.0,"rh_min":52.0,"rh_max":52.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T18:00","co2":534.92,"co2_min":528.0,"co2_max":546.0,"co2_n":12,"rh":52.33,"rh_min":52.0,"rh_max":53.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T19:00","co2":519.42,"co2_min":509.0,"co2_max":532.0,"co2_n":12,"rh":53.42,"rh_min":53.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T20:00","co2":505.08,"co2_min":491.0,"co2_max":516.0,"co2_n":12,"rh":54.33,"rh_min":54.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T21:00","co2":489.0,"co2_min":478.0,"co2_max":501.0,"co2_n":12,"rh":55.0,"rh_min":55.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T22:00","co2":491.67,"co2_min":486.0,"co2_max":498.0,"co2_n":12,"rh":55.0,"rh_min":55.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-08T23:00","co2":489.33,"co2_min":480.0,"co2_max":503.0,"co2_n":12,"rh":55.0,"rh_min":55.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T00:00","co2":488.5,"co2_min":477.0,"co2_max":502.0,"co2_n":12,"rh":55.0,"rh_min":55.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T01:00","co2":487.92,"co2_min":482.0,"co2_max":497.0,"co2_n":12,"rh":55.75,"rh_min":55.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T02:00","co2":485.92,"co2_min":480.0,"co2_max":494.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T03:00","co2":482.17,"co2_min":475.0,"co2_max":487.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T04:00","co2":480.17,"co2_min":467.0,"co2_max":488.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T05:00","co2":478.17,"co2_min":459.0,"co2_max":490.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T06:00","co2":470.5,"co2_min":462.0,"co2_max":479.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T07:00","co2":470.08,"co2_min":456.0,"co2_max":481.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T08:00","co2":470.42,"co2_min":461.0,"co2_max":481.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T09:00","co2":466.83,"co2_min":455.0,"co2_max":476.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T10:00","co2":465.58,"co2_min":460.0,"co2_max":475.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T11:00","co2":466.17,"co2_min":459.0,"co2_max":476.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T12:00","co2":465.58,"co2_min":454.0,"co2_max":480.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T13:00","co2":459.67,"co2_min":451.0,"co2_max":467.0,"co2_n":12,"rh":55.42,"rh_min":55.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T14:00","co2":458.08,"co2_min":450.0,"co2_max":466.0,"co2_n":12,"rh":55.0,"rh_min":55.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T15:00","co2":459.75,"co2_min":454.0,"co2_max":464.0,"co2_n":12,"rh":54.83,"rh_min":54.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T16:00","co2":460.67,"co2_min":453.0,"co2_max":470.0,"co2_n":12,"rh":54.0,"rh_min":54.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T17:00","co2":460.67,"co2_min":452.0,"co2_max":468.0,"co2_n":12,"rh":54.0,"rh_min":54.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T18:00","co2":468.42,"co2_min":456.0,"co2_max":479.0,"co2_n":12,"rh":53.25,"rh_min":53.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T19:00","co2":474.75,"co2_min":467.0,"co2_max":492.0,"co2_n":12,"rh":53.0,"rh_min":53.0,"rh_max":53.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T20:00","co2":473.83,"co2_min":451.0,"co2_max":486.0,"co2_n":12,"rh":53.0,"rh_min":53.0,"rh_max":53.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T21:00","co2":475.0,"co2_min":467.0,"co2_max":485.0,"co2_n":12,"rh":52.17,"rh_min":52.0,"rh_max":53.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T22:00","co2":466.92,"co2_min":460.0,"co2_max":481.0,"co2_n":12,"rh":52.0,"rh_min":52.0,"rh_max":52.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-09T23:00","co2":466.58,"co2_min":453.0,"co2_max":477.0,"co2_n":12,"rh":52.0,"rh_min":52.0,"rh_max":52.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T00:00","co2":459.25,"co2_min":447.0,"co2_max":467.0,"co2_n":12,"rh":51.25,"rh_min":51.0,"rh_max":52.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T01:00","co2":461.08,"co2_min":448.0,"co2_max":470.0,"co2_n":12,"rh":51.0,"rh_min":51.0,"rh_max":51.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T02:00","co2":453.0,"co2_min":445.0,"co2_max":465.0,"co2_n":12,"rh":50.58,"rh_min":50.0,"rh_max":51.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T03:00","co2":451.92,"co2_min":442.0,"co2_max":462.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T04:00","co2":449.33,"co2_min":443.0,"co2_max":459.0,"co2_n":12,"rh":49.5,"rh_min":49.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T05:00","co2":446.75,"co2_min":431.0,"co2_max":461.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T06:00","co2":445.08,"co2_min":429.0,"co2_max":460.0,"co2_n":12,"rh":48.33,"rh_min":48.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T07:00","co2":445.67,"co2_min":438.0,"co2_max":456.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T08:00","co2":444.75,"co2_min":433.0,"co2_max":450.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T09:00","co2":445.25,"co2_min":435.0,"co2_max":455.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T10:00","co2":449.0,"co2_min":440.0,"co2_max":456.0,"co2_n":12,"rh":46.08,"rh_min":46.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T11:00","co2":450.5,"co2_min":441.0,"co2_max":462.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T12:00","co2":454.0,"co2_min":442.0,"co2_max":463.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T13:00","co2":448.33,"co2_min":440.0,"co2_max":456.0,"co2_n":12,"rh":45.0,"rh_min":45.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T14:00","co2":446.75,"co2_min":440.0,"co2_max":455.0,"co2_n":12,"rh":45.0,"rh_min":45.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T15:00","co2":451.08,"co2_min":439.0,"co2_max":460.0,"co2_n":12,"rh":45.0,"rh_min":45.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T16:00","co2":450.83,"co2_min":443.0,"co2_max":457.0,"co2_n":12,"rh":45.5,"rh_min":45.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T17:00","co2":451.92,"co2_min":439.0,"co2_max":461.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T18:00","co2":458.0,"co2_min":444.0,"co2_max":466.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T19:00","co2":461.0,"co2_min":451.0,"co2_max":471.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T20:00","co2":465.25,"co2_min":457.0,"co2_max":477.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T21:00","co2":469.67,"co2_min":461.0,"co2_max":483.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T22:00","co2":467.25,"co2_min":458.0,"co2_max":479.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-10T23:00","co2":467.25,"co2_min":455.0,"co2_max":475.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T00:00","co2":471.67,"co2_min":463.0,"co2_max":481.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T01:00","co2":465.83,"co2_min":456.0,"co2_max":475.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T02:00","co2":464.25,"co2_min":458.0,"co2_max":474.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T03:00","co2":463.33,"co2_min":451.0,"co2_max":470.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T04:00","co2":463.42,"co2_min":455.0,"co2_max":472.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T05:00","co2":460.0,"co2_min":452.0,"co2_max":468.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T06:00","co2":461.75,"co2_min":456.0,"co2_max":472.0,"co2_n":12,"rh":46.58,"rh_min":46.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T07:00","co2":462.5,"co2_min":452.0,"co2_max":470.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T08:00","co2":465.5,"co2_min":453.0,"co2_max":476.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T09:00","co2":460.5,"co2_min":451.0,"co2_max":472.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T10:00","co2":460.58,"co2_min":454.0,"co2_max":470.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T11:00","co2":462.58,"co2_min":454.0,"co2_max":472.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T12:00","co2":462.33,"co2_min":449.0,"co2_max":473.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T13:00","co2":458.25,"co2_min":449.0,"co2_max":466.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T14:00","co2":459.75,"co2_min":454.0,"co2_max":467.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T15:00","co2":460.67,"co2_min":451.0,"co2_max":469.0,"co2_n":12,"rh":47.75,"rh_min":47.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T16:00","co2":461.58,"co2_min":445.0,"co2_max":471.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T17:00","co2":464.17,"co2_min":453.0,"co2_max":477.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T18:00","co2":466.83,"co2_min":457.0,"co2_max":484.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T19:00","co2":470.25,"co2_min":465.0,"co2_max":480.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T20:00","co2":468.67,"co2_min":458.0,"co2_max":480.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T21:00","co2":466.83,"co2_min":454.0,"co2_max":475.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T22:00","co2":465.0,"co2_min":452.0,"co2_max":478.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-11T23:00","co2":468.25,"co2_min":457.0,"co2_max":484.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T00:00","co2":464.67,"co2_min":456.0,"co2_max":474.0,"co2_n":12,"rh":48.33,"rh_min":48.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T01:00","co2":468.92,"co2_min":460.0,"co2_max":478.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T02:00","co2":470.67,"co2_min":461.0,"co2_max":481.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T03:00","co2":468.67,"co2_min":456.0,"co2_max":483.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T04:00","co2":468.92,"co2_min":451.0,"co2_max":481.0,"co2_n":12,"rh":49.25,"rh_min":49.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T05:00","co2":468.83,"co2_min":460.0,"co2_max":480.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T06:00","co2":469.83,"co2_min":457.0,"co2_max":481.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T07:00","co2":471.58,"co2_min":455.0,"co2_max":478.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T08:00","co2":477.17,"co2_min":467.0,"co2_max":493.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T09:00","co2":476.67,"co2_min":471.0,"co2_max":482.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T10:00","co2":474.33,"co2_min":465.0,"co2_max":489.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T11:00","co2":472.17,"co2_min":467.0,"co2_max":480.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T12:00","co2":472.83,"co2_min":460.0,"co2_max":485.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T13:00","co2":468.67,"co2_min":455.0,"co2_max":477.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T14:00","co2":473.67,"co2_min":466.0,"co2_max":480.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T15:00","co2":471.58,"co2_min":462.0,"co2_max":479.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T16:00","co2":470.42,"co2_min":461.0,"co2_max":481.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T17:00","co2":469.42,"co2_min":452.0,"co2_max":484.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T18:00","co2":470.0,"co2_min":460.0,"co2_max":478.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T19:00","co2":468.92,"co2_min":458.0,"co2_max":482.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T20:00","co2":467.08,"co2_min":460.0,"co2_max":474.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T21:00","co2":468.33,"co2_min":462.0,"co2_max":480.0,"co2_n":12,"rh":49.33,"rh_min":49.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T22:00","co2":470.17,"co2_min":458.0,"co2_max":481.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-12T23:00","co2":469.75,"co2_min":458.0,"co2_max":479.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T00:00","co2":479.0,"co2_min":473.0,"co2_max":491.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T01:00","co2":476.92,"co2_min":468.0,"co2_max":487.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T02:00","co2":479.08,"co2_min":466.0,"co2_max":488.0,"co2_n":12,"rh":48.25,"rh_min":48.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T03:00","co2":476.75,"co2_min":466.0,"co2_max":490.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T04:00","co2":473.25,"co2_min":464.0,"co2_max":486.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T05:00","co2":475.08,"co2_min":465.0,"co2_max":490.0,"co2_n":12,"rh":47.5,"rh_min":47.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T06:00","co2":472.33,"co2_min":464.0,"co2_max":482.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T07:00","co2":473.58,"co2_min":466.0,"co2_max":486.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T08:00","co2":469.83,"co2_min":465.0,"co2_max":481.0,"co2_n":12,"rh":46.67,"rh_min":46.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T09:00","co2":470.5,"co2_min":460.0,"co2_max":483.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T10:00","co2":469.42,"co2_min":461.0,"co2_max":479.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T11:00","co2":472.5,"co2_min":465.0,"co2_max":483.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T12:00","co2":473.17,"co2_min":463.0,"co2_max":483.0,"co2_n":12,"rh":45.17,"rh_min":45.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T13:00","co2":475.42,"co2_min":463.0,"co2_max":486.0,"co2_n":12,"rh":45.0,"rh_min":45.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T14:00","co2":522.58,"co2_min":479.0,"co2_max":561.0,"co2_n":12,"rh":45.0,"rh_min":45.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T15:00","co2":553.17,"co2_min":530.0,"co2_max":571.0,"co2_n":12,"rh":45.0,"rh_min":45.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T16:00","co2":584.0,"co2_min":569.0,"co2_max":591.0,"co2_n":12,"rh":45.0,"rh_min":45.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T17:00","co2":586.5,"co2_min":574.0,"co2_max":600.0,"co2_n":12,"rh":45.0,"rh_min":45.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T18:00","co2":576.75,"co2_min":566.0,"co2_max":598.0,"co2_n":12,"rh":45.0,"rh_min":45.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T19:00","co2":564.0,"co2_min":545.0,"co2_max":572.0,"co2_n":12,"rh":44.75,"rh_min":44.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T20:00","co2":554.83,"co2_min":538.0,"co2_max":570.0,"co2_n":12,"rh":44.0,"rh_min":44.0,"rh_max":44.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T21:00","co2":534.67,"co2_min":521.0,"co2_max":547.0,"co2_n":12,"rh":44.0,"rh_min":44.0,"rh_max":44.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T22:00","co2":523.0,"co2_min":513.0,"co2_max":534.0,"co2_n":12,"rh":44.0,"rh_min":44.0,"rh_max":44.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-13T23:00","co2":507.42,"co2_min":499.0,"co2_max":518.0,"co2_n":12,"rh":44.0,"rh_min":44.0,"rh_max":44.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T00:00","co2":498.08,"co2_min":486.0,"co2_max":506.0,"co2_n":12,"rh":44.0,"rh_min":44.0,"rh_max":44.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T01:00","co2":494.0,"co2_min":486.0,"co2_max":503.0,"co2_n":12,"rh":44.0,"rh_min":44.0,"rh_max":44.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T02:00","co2":480.92,"co2_min":472.0,"co2_max":489.0,"co2_n":12,"rh":44.83,"rh_min":44.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T03:00","co2":477.08,"co2_min":462.0,"co2_max":486.0,"co2_n":12,"rh":45.0,"rh_min":45.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T04:00","co2":467.83,"co2_min":456.0,"co2_max":481.0,"co2_n":12,"rh":45.42,"rh_min":45.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T05:00","co2":461.42,"co2_min":453.0,"co2_max":472.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T06:00","co2":460.92,"co2_min":453.0,"co2_max":472.0,"co2_n":12,"rh":46.92,"rh_min":46.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T07:00","co2":459.42,"co2_min":453.0,"co2_max":470.0,"co2_n":12,"rh":47.25,"rh_min":47.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T08:00","co2":462.08,"co2_min":454.0,"co2_max":474.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T09:00","co2":461.75,"co2_min":452.0,"co2_max":473.0,"co2_n":12,"rh":48.58,"rh_min":48.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T10:00","co2":462.58,"co2_min":455.0,"co2_max":472.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T11:00","co2":467.17,"co2_min":458.0,"co2_max":475.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T12:00","co2":468.58,"co2_min":462.0,"co2_max":477.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T13:00","co2":469.5,"co2_min":453.0,"co2_max":478.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T14:00","co2":470.92,"co2_min":461.0,"co2_max":479.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T15:00","co2":472.08,"co2_min":465.0,"co2_max":480.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T16:00","co2":480.75,"co2_min":470.0,"co2_max":492.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T17:00","co2":496.33,"co2_min":485.0,"co2_max":508.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T18:00","co2":512.0,"co2_min":497.0,"co2_max":529.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T19:00","co2":522.08,"co2_min":508.0,"co2_max":535.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T20:00","co2":529.75,"co2_min":520.0,"co2_max":543.0,"co2_n":12,"rh":48.33,"rh_min":48.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T21:00","co2":529.33,"co2_min":519.0,"co2_max":536.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T22:00","co2":528.92,"co2_min":515.0,"co2_max":543.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-14T23:00","co2":528.08,"co2_min":518.0,"co2_max":536.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T00:00","co2":533.75,"co2_min":521.0,"co2_max":543.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T01:00","co2":531.0,"co2_min":520.0,"co2_max":544.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T02:00","co2":528.75,"co2_min":516.0,"co2_max":541.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T03:00","co2":530.92,"co2_min":519.0,"co2_max":538.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T04:00","co2":527.58,"co2_min":520.0,"co2_max":533.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T05:00","co2":521.92,"co2_min":511.0,"co2_max":535.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T06:00","co2":526.17,"co2_min":519.0,"co2_max":536.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T07:00","co2":524.83,"co2_min":520.0,"co2_max":531.0,"co2_n":12,"rh":47.83,"rh_min":47.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T08:00","co2":522.5,"co2_min":511.0,"co2_max":531.0,"co2_n":12,"rh":47.08,"rh_min":47.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T09:00","co2":521.92,"co2_min":512.0,"co2_max":534.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T10:00","co2":522.92,"co2_min":507.0,"co2_max":540.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T11:00","co2":521.83,"co2_min":510.0,"co2_max":533.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T12:00","co2":514.42,"co2_min":503.0,"co2_max":525.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T13:00","co2":516.75,"co2_min":507.0,"co2_max":530.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T14:00","co2":509.08,"co2_min":503.0,"co2_max":519.0,"co2_n":12,"rh":47.25,"rh_min":47.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T15:00","co2":511.42,"co2_min":497.0,"co2_max":522.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T16:00","co2":507.42,"co2_min":496.0,"co2_max":517.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T17:00","co2":505.0,"co2_min":498.0,"co2_max":517.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T18:00","co2":507.08,"co2_min":495.0,"co2_max":516.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T19:00","co2":504.25,"co2_min":497.0,"co2_max":512.0,"co2_n":12,"rh":48.08,"rh_min":48.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T20:00","co2":500.17,"co2_min":490.0,"co2_max":511.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T21:00","co2":498.5,"co2_min":485.0,"co2_max":514.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T22:00","co2":498.08,"co2_min":487.0,"co2_max":504.0,"co2_n":12,"rh":49.0,"rh_min":49.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-15T23:00","co2":500.75,"co2_min":491.0,"co2_max":515.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T00:00","co2":498.83,"co2_min":490.0,"co2_max":507.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T01:00","co2":495.0,"co2_min":479.0,"co2_max":509.0,"co2_n":12,"rh":50.0,"rh_min":50.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T02:00","co2":500.42,"co2_min":494.0,"co2_max":508.0,"co2_n":12,"rh":50.5,"rh_min":50.0,"rh_max":51.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T03:00","co2":498.17,"co2_min":481.0,"co2_max":509.0,"co2_n":12,"rh":51.0,"rh_min":51.0,"rh_max":51.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T04:00","co2":504.83,"co2_min":496.0,"co2_max":515.0,"co2_n":12,"rh":51.0,"rh_min":51.0,"rh_max":51.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T05:00","co2":500.25,"co2_min":488.0,"co2_max":512.0,"co2_n":12,"rh":51.0,"rh_min":51.0,"rh_max":51.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T06:00","co2":504.42,"co2_min":489.0,"co2_max":516.0,"co2_n":12,"rh":51.5,"rh_min":51.0,"rh_max":52.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T07:00","co2":503.33,"co2_min":495.0,"co2_max":512.0,"co2_n":12,"rh":52.0,"rh_min":52.0,"rh_max":52.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T08:00","co2":503.83,"co2_min":497.0,"co2_max":509.0,"co2_n":12,"rh":52.0,"rh_min":52.0,"rh_max":52.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T09:00","co2":507.58,"co2_min":492.0,"co2_max":519.0,"co2_n":12,"rh":52.0,"rh_min":52.0,"rh_max":52.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T10:00","co2":505.83,"co2_min":496.0,"co2_max":519.0,"co2_n":12,"rh":52.0,"rh_min":52.0,"rh_max":52.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T11:00","co2":507.25,"co2_min":493.0,"co2_max":518.0,"co2_n":12,"rh":52.25,"rh_min":52.0,"rh_max":53.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T12:00","co2":506.83,"co2_min":499.0,"co2_max":514.0,"co2_n":12,"rh":53.0,"rh_min":53.0,"rh_max":53.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T13:00","co2":501.5,"co2_min":491.0,"co2_max":511.0,"co2_n":12,"rh":53.0,"rh_min":53.0,"rh_max":53.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T14:00","co2":505.75,"co2_min":494.0,"co2_max":517.0,"co2_n":12,"rh":53.42,"rh_min":53.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T15:00","co2":504.83,"co2_min":490.0,"co2_max":516.0,"co2_n":12,"rh":54.0,"rh_min":54.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T16:00","co2":501.75,"co2_min":491.0,"co2_max":510.0,"co2_n":12,"rh":54.0,"rh_min":54.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T17:00","co2":504.58,"co2_min":491.0,"co2_max":514.0,"co2_n":12,"rh":54.0,"rh_min":54.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T18:00","co2":497.83,"co2_min":490.0,"co2_max":504.0,"co2_n":12,"rh":54.08,"rh_min":54.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T19:00","co2":502.58,"co2_min":491.0,"co2_max":520.0,"co2_n":12,"rh":55.0,"rh_min":55.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T20:00","co2":499.92,"co2_min":493.0,"co2_max":511.0,"co2_n":12,"rh":55.0,"rh_min":55.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T21:00","co2":499.0,"co2_min":490.0,"co2_max":510.0,"co2_n":12,"rh":55.0,"rh_min":55.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T22:00","co2":502.5,"co2_min":492.0,"co2_max":515.0,"co2_n":12,"rh":55.0,"rh_min":55.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-16T23:00","co2":502.5,"co2_min":492.0,"co2_max":521.0,"co2_n":12,"rh":55.0,"rh_min":55.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T00:00","co2":508.5,"co2_min":498.0,"co2_max":519.0,"co2_n":12,"rh":55.0,"rh_min":55.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T01:00","co2":511.83,"co2_min":499.0,"co2_max":522.0,"co2_n":12,"rh":55.08,"rh_min":55.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T02:00","co2":520.0,"co2_min":509.0,"co2_max":535.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T03:00","co2":524.08,"co2_min":512.0,"co2_max":543.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T04:00","co2":523.58,"co2_min":511.0,"co2_max":536.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T05:00","co2":520.33,"co2_min":511.0,"co2_max":531.0,"co2_n":12,"rh":56.0,"rh_min":56.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T06:00","co2":522.58,"co2_min":508.0,"co2_max":534.0,"co2_n":12,"rh":55.92,"rh_min":55.0,"rh_max":56.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T07:00","co2":520.75,"co2_min":511.0,"co2_max":532.0,"co2_n":12,"rh":55.0,"rh_min":55.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T08:00","co2":518.58,"co2_min":511.0,"co2_max":527.0,"co2_n":12,"rh":55.0,"rh_min":55.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T09:00","co2":520.42,"co2_min":511.0,"co2_max":535.0,"co2_n":12,"rh":54.67,"rh_min":54.0,"rh_max":55.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T10:00","co2":524.67,"co2_min":515.0,"co2_max":535.0,"co2_n":12,"rh":54.0,"rh_min":54.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T11:00","co2":526.33,"co2_min":509.0,"co2_max":535.0,"co2_n":12,"rh":54.0,"rh_min":54.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T12:00","co2":525.75,"co2_min":515.0,"co2_max":539.0,"co2_n":12,"rh":53.25,"rh_min":53.0,"rh_max":54.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T13:00","co2":526.25,"co2_min":508.0,"co2_max":540.0,"co2_n":12,"rh":53.0,"rh_min":53.0,"rh_max":53.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T14:00","co2":522.67,"co2_min":517.0,"co2_max":537.0,"co2_n":12,"rh":52.17,"rh_min":52.0,"rh_max":53.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T15:00","co2":511.92,"co2_min":502.0,"co2_max":522.0,"co2_n":12,"rh":51.5,"rh_min":51.0,"rh_max":52.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T16:00","co2":509.67,"co2_min":501.0,"co2_max":522.0,"co2_n":12,"rh":50.58,"rh_min":50.0,"rh_max":51.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T17:00","co2":510.5,"co2_min":496.0,"co2_max":527.0,"co2_n":12,"rh":49.5,"rh_min":49.0,"rh_max":50.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T18:00","co2":511.67,"co2_min":496.0,"co2_max":521.0,"co2_n":12,"rh":48.75,"rh_min":48.0,"rh_max":49.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T19:00","co2":507.5,"co2_min":492.0,"co2_max":525.0,"co2_n":12,"rh":48.0,"rh_min":48.0,"rh_max":48.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T20:00","co2":502.92,"co2_min":497.0,"co2_max":510.0,"co2_n":12,"rh":47.0,"rh_min":47.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T21:00","co2":502.67,"co2_min":488.0,"co2_max":519.0,"co2_n":12,"rh":46.5,"rh_min":46.0,"rh_max":47.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T22:00","co2":495.83,"co2_min":486.0,"co2_max":506.0,"co2_n":12,"rh":46.0,"rh_min":46.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-17T23:00","co2":497.5,"co2_min":485.0,"co2_max":506.0,"co2_n":12,"rh":45.75,"rh_min":45.0,"rh_max":46.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T00:00","co2":498.17,"co2_min":486.0,"co2_max":509.0,"co2_n":12,"rh":45.0,"rh_min":45.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T01:00","co2":504.0,"co2_min":497.0,"co2_max":516.0,"co2_n":12,"rh":44.92,"rh_min":44.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T02:00","co2":505.75,"co2_min":496.0,"co2_max":515.0,"co2_n":12,"rh":44.0,"rh_min":44.0,"rh_max":44.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T03:00","co2":505.83,"co2_min":493.0,"co2_max":520.0,"co2_n":12,"rh":44.0,"rh_min":44.0,"rh_max":44.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T04:00","co2":508.67,"co2_min":499.0,"co2_max":519.0,"co2_n":12,"rh":44.0,"rh_min":44.0,"rh_max":44.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T05:00","co2":510.67,"co2_min":500.0,"co2_max":515.0,"co2_n":12,"rh":43.17,"rh_min":43.0,"rh_max":44.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T06:00","co2":518.0,"co2_min":510.0,"co2_max":527.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T07:00","co2":530.42,"co2_min":511.0,"co2_max":543.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T08:00","co2":539.5,"co2_min":529.0,"co2_max":551.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T09:00","co2":545.67,"co2_min":537.0,"co2_max":558.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T10:00","co2":544.5,"co2_min":537.0,"co2_max":560.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T11:00","co2":541.92,"co2_min":534.0,"co2_max":554.0,"co2_n":12,"rh":42.67,"rh_min":42.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T12:00","co2":533.92,"co2_min":526.0,"co2_max":542.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T13:00","co2":527.67,"co2_min":520.0,"co2_max":536.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T14:00","co2":522.42,"co2_min":505.0,"co2_max":532.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T15:00","co2":518.17,"co2_min":506.0,"co2_max":529.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T16:00","co2":520.42,"co2_min":507.0,"co2_max":535.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T17:00","co2":516.25,"co2_min":509.0,"co2_max":524.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T18:00","co2":512.67,"co2_min":506.0,"co2_max":519.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T19:00","co2":510.83,"co2_min":503.0,"co2_max":518.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T20:00","co2":512.42,"co2_min":502.0,"co2_max":524.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T21:00","co2":514.33,"co2_min":504.0,"co2_max":534.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T22:00","co2":518.42,"co2_min":512.0,"co2_max":523.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-18T23:00","co2":517.42,"co2_min":505.0,"co2_max":530.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T00:00","co2":521.42,"co2_min":509.0,"co2_max":537.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T01:00","co2":525.08,"co2_min":516.0,"co2_max":538.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T02:00","co2":529.92,"co2_min":522.0,"co2_max":542.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T03:00","co2":536.17,"co2_min":526.0,"co2_max":555.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T04:00","co2":544.67,"co2_min":530.0,"co2_max":555.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T05:00","co2":545.92,"co2_min":536.0,"co2_max":555.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T06:00","co2":545.42,"co2_min":532.0,"co2_max":559.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T07:00","co2":553.92,"co2_min":544.0,"co2_max":561.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T08:00","co2":555.17,"co2_min":547.0,"co2_max":564.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T09:00","co2":550.67,"co2_min":537.0,"co2_max":564.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T10:00","co2":550.0,"co2_min":545.0,"co2_max":559.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T11:00","co2":545.67,"co2_min":533.0,"co2_max":560.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T12:00","co2":540.17,"co2_min":527.0,"co2_max":547.0,"co2_n":12,"rh":42.08,"rh_min":42.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T13:00","co2":532.08,"co2_min":524.0,"co2_max":538.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T14:00","co2":532.58,"co2_min":523.0,"co2_max":536.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T15:00","co2":572.0,"co2_min":552.0,"co2_max":592.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T16:00","co2":577.42,"co2_min":568.0,"co2_max":590.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T17:00","co2":579.25,"co2_min":568.0,"co2_max":591.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T18:00","co2":570.08,"co2_min":554.0,"co2_max":586.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T19:00","co2":552.08,"co2_min":543.0,"co2_max":565.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T20:00","co2":545.58,"co2_min":528.0,"co2_max":564.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T21:00","co2":545.67,"co2_min":536.0,"co2_max":560.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T22:00","co2":537.0,"co2_min":530.0,"co2_max":545.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-19T23:00","co2":531.83,"co2_min":522.0,"co2_max":541.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T00:00","co2":532.75,"co2_min":526.0,"co2_max":540.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T01:00","co2":533.33,"co2_min":519.0,"co2_max":546.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T02:00","co2":542.0,"co2_min":521.0,"co2_max":552.0,"co2_n":12,"rh":42.0,"rh_min":42.0,"rh_max":42.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T03:00","co2":542.67,"co2_min":532.0,"co2_max":550.0,"co2_n":12,"rh":42.75,"rh_min":42.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T04:00","co2":540.08,"co2_min":533.0,"co2_max":558.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T05:00","co2":539.0,"co2_min":533.0,"co2_max":544.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T06:00","co2":537.58,"co2_min":527.0,"co2_max":551.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T07:00","co2":545.17,"co2_min":537.0,"co2_max":557.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T08:00","co2":540.17,"co2_min":536.0,"co2_max":546.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T09:00","co2":538.83,"co2_min":527.0,"co2_max":544.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T10:00","co2":538.75,"co2_min":530.0,"co2_max":552.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T11:00","co2":566.5,"co2_min":555.0,"co2_max":585.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T12:00","co2":558.75,"co2_min":542.0,"co2_max":573.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T13:00","co2":544.5,"co2_min":531.0,"co2_max":558.0,"co2_n":12,"rh":43.0,"rh_min":43.0,"rh_max":43.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T14:00","co2":585.0,"co2_min":551.0,"co2_max":633.0,"co2_n":12,"rh":43.25,"rh_min":43.0,"rh_max":44.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T15:00","co2":622.42,"co2_min":612.0,"co2_max":635.0,"co2_n":12,"rh":44.0,"rh_min":44.0,"rh_max":44.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T16:00","co2":658.08,"co2_min":609.0,"co2_max":783.0,"co2_n":12,"rh":44.08,"rh_min":44.0,"rh_max":45.0,"rh_n":12,"high_h":0.0},{"t":"2026-10-20T17:00","co2":686.4,"co2_min":646.0,"co2_max":732.0,"co2_n":5,"rh":42.0,"rh_min":41.0,"rh_max":43.0,"rh_n":5,"high_h":0.0}],"daily":[{"t":"2026-10-03","co2":472.57,"co2_min":452.0,"co2_max":488.0,"co2_n":223,"rh":60.19,"rh_min":58.0,"rh_max":62.0,"rh_n":223,"high_h":0.0},{"t":"2026-10-04","co2":467.69,"co2_min":449.0,"co2_max":486.0,"co2_n":288,"rh":55.96,"rh_min":53.0,"rh_max":58.0,"rh_n":288,"high_h":0.0},{"t":"2026-10-05","co2":483.41,"co2_min":447.0,"co2_max":549.0,"co2_n":288,"rh":56.13,"rh_min":53.0,"rh_max":61.0,"rh_n":288,"high_h":0.0},{"t":"2026-10-06","co2":513.75,"co2_min":443.0,"co2_max":693.0,"co2_n":288,"rh":53.45,"rh_min":48.0,"rh_max":60.0,"rh_n":288,"high_h":0.0},{"t":"2026-10-07","co2":461.09,"co2_min":432.0,"co2_max":483.0,"co2_n":288,"rh":47.23,"rh_min":45.0,"rh_max":48.0,"rh_n":288,"high_h":0.0},{"t":"2026-10-08","co2":486.67,"co2_min":444.0,"co2_max":580.0,"co2_n":288,"rh":49.86,"rh_min":45.0,"rh_max":55.0,"rh_n":288,"high_h":0.0},{"t":"2026-10-09","co2":470.93,"co2_min":450.0,"co2_max":502.0,"co2_n":288,"rh":54.81,"rh_min":52.0,"rh_max":56.0,"rh_n":288,"high_h":0.0},{"t":"2026-10-10","co2":453.87,"co2_min":429.0,"co2_max":483.0,"co2_n":288,"rh":47.18,"rh_min":45.0,"rh_max":52.0,"rh_n":288,"high_h":0.0},{"t":"2026-10-11","co2":463.94,"co2_min":445.0,"co2_max":484.0,"co2_n":288,"rh":47.1,"rh_min":46.0,"rh_max":48.0,"rh_n":288,"high_h":0.0},{"t":"2026-10-12","co2":470.55,"co2_min":451.0,"co2_max":493.0,"co2_n":288,"rh":49.66,"rh_min":48.0,"rh_max":50.0,"rh_n":288,"high_h":0.0},{"t":"2026-10-13","co2":505.99,"co2_min":460.0,"co2_max":600.0,"co2_n":288,"rh":46.01,"rh_min":44.0,"rh_max":49.0,"rh_n":288,"high_h":0.0},{"t":"2026-10-14","co2":485.9,"co2_min":452.0,"co2_max":543.0,"co2_n":288,"rh":47.6,"rh_min":44.0,"rh_max":49.0,"rh_n":288,"high_h":0.0},{"t":"2026-10-15","co2":516.12,"co2_min":485.0,"co2_max":544.0,"co2_n":288,"rh":47.93,"rh_min":47.0,"rh_max":50.0,"rh_n":288,"high_h":0.0},{"t":"2026-10-16","co2":502.47,"co2_min":479.0,"co2_max":521.0,"co2_n":288,"rh":52.74,"rh_min":50.0,"rh_max":55.0,"rh_n":288,"high_h":0.0},{"t":"2026-10-17","co2":515.27,"co2_min":485.0,"co2_max":543.0,"co2_n":288,"rh":52.28,"rh_min":45.0,"rh_max":56.0,"rh_n":288,"high_h":0.0},{"t":"2026-10-18","co2":519.92,"co2_min":486.0,"co2_max":560.0,"co2_n":288,"rh":42.86,"rh_min":42.0,"rh_max":45.0,"rh_n":288,"high_h":0.0},{"t":"2026-10-19","co2":546.66,"co2_min":509.0,"co2_max":592.0,"co2_n":288,"rh":42.5,"rh_min":42.0,"rh_max":43.0,"rh_n":288,"high_h":0.0},{"t":"2026-10-20","co2":559.9,"co2_min":519.0,"co2_max":783.0,"co2_n":209,"rh":42.92,"rh_min":41.0,"rh_max":45.0,"rh_n":209,"high_h":0.0}],"first":"2026-10-03T05:28:15","last":"2026-10-20T17:23:15","logged_s":1511700,"readings":5040,"has_temp":false};
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const parse = s => new Date(s.length === 10 ? s + "T00:00" : s);
+const fmtDay = d => d.getDate() + " " + MONTHS[d.getMonth()];
+const fmtFull = d => fmtDay(d) + " " + d.getFullYear();
+const pad = n => String(n).padStart(2, "0");
+const fmtTime = d => pad(d.getHours()) + ":" + pad(d.getMinutes());
+
+let state = { range: "30", res: "hourly" };
+
+function co2Colour(v) {
+  return v < 800 ? css("--ok") : v < 1200 ? css("--warn") : css("--bad");
+}
+
+function niceTicks(lo, hi, n) {
+  if (hi === lo) { hi = lo + 1; }
+  const raw = (hi - lo) / n;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw);
+  const ticks = [];
+  for (let t = Math.floor(lo / step) * step; t <= hi + 1e-9; t += step) ticks.push(+t.toFixed(6));
+  if (ticks[ticks.length - 1] < hi) ticks.push(ticks[ticks.length - 1] + step);
+  return ticks;
+}
+
+// Visible time window: the selected range back from the last reading
+function domain() {
+  const end = parse(DATA.last).getTime();
+  if (state.range === "all") {
+    const first = parse(DATA.first);
+    first.setHours(0, 0, 0, 0);
+    return [first.getTime(), end];
+  }
+  return [end - (+state.range) * 864e5, end];
+}
+
+function visible() {
+  const [start] = domain();
+  return DATA[state.res].filter(p => parse(p.t).getTime() >= start);
+}
+
+// Line or bar chart drawn as inline SVG
+function draw(id, pts, opt) {
+  const box = document.getElementById(id);
+  const W = Math.max(box.clientWidth, 260), H = 190;
+  const m = { l: 40, r: 8, t: 8, b: 22 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  // Daily view also draws the min–max band, so the axis must cover it
+  const band = state.res === "daily" && !opt.bars;
+  const ys = pts.flatMap(p => band ? [p[opt.key], p[opt.key + "_min"], p[opt.key + "_max"]] : [p[opt.key]])
+                .filter(v => v != null);
+  const extra = (opt.refs || []).filter(r => r < Math.max(...ys) * 1.3);
+  let lo = opt.zero ? 0 : Math.min(...ys, ...extra), hi = Math.max(...ys, ...extra);
+  const ticks = niceTicks(lo, hi, 4);
+  lo = ticks[0]; hi = ticks[ticks.length - 1];
+  // Compressed time axis: stretches with data keep their real scale, while every
+  // gap of a day or more shrinks to a narrow band labelled with its length
+  const n = pts.length;
+  const step = state.res === "daily" ? 864e5 : 36e5;
+  const tm = pts.map(p => parse(p.t).getTime() + step / 2);
+  const joined = i => tm[i + 1] - tm[i] <= step * 1.5;
+  const MIN_GAP = 864e5;
+  const segs = [{ a: tm[0] - step / 2 }];
+  for (let i = 0; i < n - 1; i++) {
+    if (tm[i + 1] - tm[i] - step >= MIN_GAP) {
+      segs[segs.length - 1].b = tm[i] + step / 2;
+      segs.push({ a: tm[i + 1] - step / 2 });
+    }
+  }
+  segs[segs.length - 1].b = tm[n - 1] + step / 2;
+  const span = segs.reduce((a, g) => a + g.b - g.a, 0);
+  // Gaps get at most 30% of the width in total (matters on phones)
+  const GAP_PX = segs.length > 1 ? Math.min(22, iw * 0.3 / (segs.length - 1)) : 0;
+  const k = (iw - GAP_PX * (segs.length - 1)) / span;
+  let cur = m.l;
+  segs.forEach(g => { g.p0 = cur; g.p1 = cur + (g.b - g.a) * k; cur = g.p1 + GAP_PX; });
+  const xt = t => { const g = segs.find(g => t <= g.b) || segs[segs.length - 1]; return g.p0 + (t - g.a) * k; };
+  const tx = px => { const g = segs.find(g => px >= g.p0 - 1 && px <= g.p1 + 1); return g ? g.a + (px - g.p0) / k : null; };
+  const x = i => xt(tm[i]);
+  const y = v => m.t + ih - (v - lo) / (hi - lo) * ih;
+
+  let s = `<svg width="${W}" height="${H}">`;
+  ticks.forEach(t => {
+    s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}" stroke="${css("--grid")}" stroke-dasharray="${t === lo ? 0 : "2 3"}"/>`;
+    s += `<text x="${m.l - 6}" y="${y(t) + 3}" text-anchor="end">${t}${opt.tickUnit || ""}</text>`;
+  });
+  (opt.refs || []).forEach(r => {
+    if (r > lo && r < hi) s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(r)}" y2="${y(r)}" stroke="${co2Colour(r + 1)}" stroke-dasharray="4 4" opacity="0.7"/>`;
+  });
+  segs.slice(1).forEach((g, j) => {
+    const prev = segs[j], days = Math.round((g.a - prev.b) / 864e5);
+    s += `<rect x="${prev.p1 + GAP_PX * 0.15}" y="${m.t}" width="${GAP_PX * 0.7}" height="${ih}" fill="${css("--pale")}"/>`;
+    if (GAP_PX >= 13) s += `<text x="${prev.p1 + GAP_PX / 2}" y="${m.t + 10}" text-anchor="middle" style="font-size:8px">${days}d</text>`;
+  });
+  for (let j = 0; j < 5; j++) {
+    const t = tx(m.l + j * iw / 4);
+    if (t == null) continue;
+    const anchor = j === 0 ? "start" : j === 4 ? "end" : "middle";
+    s += `<text x="${m.l + j * iw / 4}" y="${H - 6}" text-anchor="${anchor}">${fmtDay(new Date(t))}</text>`;
+  }
+
+  if (opt.bars) {
+    const bw = Math.max(1, step * k * 0.7);
+    pts.forEach((p, i) => {
+      const v = p[opt.key] || 0;
+      if (v > 0) s += `<rect x="${x(i) - bw / 2}" y="${y(v)}" width="${bw}" height="${y(lo) - y(v)}" rx="1.5" fill="${opt.colour}"/>`;
+    });
+  } else {
+    // Daily view: shaded min–max band behind the average line, one band per run of days
+    if (state.res === "daily" && pts[0][opt.key + "_min"] != null) {
+      let run = [];
+      const flush = () => {
+        if (run.length > 1) {
+          const top = run.map(i => `${x(i)},${y(pts[i][opt.key + "_max"])}`);
+          const bottom = run.map(i => `${x(i)},${y(pts[i][opt.key + "_min"])}`).reverse();
+          s += `<polygon points="${top.concat(bottom).join(" ")}" fill="${opt.colour}" opacity="0.10"/>`;
+        }
+        run = [];
+      };
+      for (let i = 0; i < n; i++) {
+        run.push(i);
+        if (i === n - 1 || !joined(i)) flush();
+      }
+    }
+    for (let i = 0; i < n - 1; i++) {
+      const a = pts[i][opt.key], b = pts[i + 1][opt.key];
+      if (a == null || b == null || !joined(i)) continue;
+      const col = opt.colourBy ? opt.colourBy((a + b) / 2) : opt.colour;
+      s += `<line x1="${x(i)}" y1="${y(a)}" x2="${x(i + 1)}" y2="${y(b)}" stroke="${col}" stroke-width="2" stroke-linecap="round"/>`;
+    }
+  }
+  s += `<line class="hover" x1="0" x2="0" y1="${m.t}" y2="${m.t + ih}" stroke="${css("--muted")}" stroke-dasharray="3 3" visibility="hidden"/>`;
+  s += `<circle class="hover" r="3.5" fill="${css("--text")}" visibility="hidden"/>`;
+  s += `</svg><div class="tip"></div>`;
+  box.innerHTML = s;
+
+  const svg = box.querySelector("svg"), tip = box.querySelector(".tip");
+  const [vline, dot] = box.querySelectorAll(".hover");
+  function move(ev) {
+    const r = svg.getBoundingClientRect();
+    const px = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left;
+    const t = tx(px);
+    if (t == null) { leave(); return; }
+    let i = 0;
+    tm.forEach((ti, k) => { if (Math.abs(ti - t) < Math.abs(tm[i] - t)) i = k; });
+    if (Math.abs(tm[i] - t) > step * 2) { leave(); return; }
+    const p = pts[i], v = p[opt.key];
+    if (v == null) return;
+    vline.setAttribute("x1", x(i)); vline.setAttribute("x2", x(i));
+    dot.setAttribute("cx", x(i)); dot.setAttribute("cy", y(v));
+    vline.setAttribute("visibility", "visible"); dot.setAttribute("visibility", "visible");
+    const d = parse(p.t);
+    const when = state.res === "hourly" ? fmtDay(d) + " " + fmtTime(d) : fmtFull(d);
+    tip.textContent = when + " · " + opt.fmt(v);
+    tip.style.left = Math.min(Math.max(x(i), 70), W - 70) + "px";
+    tip.style.top = (y(v) - 8) + "px";
+    tip.style.display = "block";
+  }
+  function leave() {
+    tip.style.display = "none";
+    vline.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden");
+  }
+  svg.addEventListener("mousemove", move);
+  svg.addEventListener("touchstart", move, { passive: true });
+  svg.addEventListener("touchmove", move, { passive: true });
+  svg.addEventListener("mouseleave", leave);
+  svg.addEventListener("touchend", leave);
+}
+
+function stats(pts, key) {
+  // Mean weighted by readings per period (= mean of all raw readings); extremes from per-period min/max
+  const v = pts.filter(p => p[key] != null);
+  const mean = v.reduce((a, p) => a + p[key] * p[key + "_n"], 0) / v.reduce((a, p) => a + p[key + "_n"], 0);
+  const lo = Math.min(...v.map(p => p[key + "_min"] ?? p[key]));
+  const hi = Math.max(...v.map(p => p[key + "_max"] ?? p[key]));
+  return { mean, lo, hi };
+}
+
+function render() {
+  const pts = visible();
+  if (!pts.length) return;
+
+  const co2 = stats(pts, "co2");
+  const vco2 = document.getElementById("v-co2");
+  vco2.innerHTML = `${Math.round(co2.mean)}<small>ppm</small>`;
+  vco2.style.color = co2Colour(co2.mean);
+  document.getElementById("s-co2").innerHTML = `${state.res}<br>${Math.round(co2.lo)}–${Math.round(co2.hi)} ppm`;
+
+  if (DATA.has_temp) {
+    const t = stats(pts, "temp");
+    document.getElementById("v-temp").innerHTML = `${t.mean.toFixed(1)}<small>°C</small>`;
+    document.getElementById("s-temp").innerHTML = `${state.res}<br>${t.lo.toFixed(1)}–${t.hi.toFixed(1)} °C`;
+  }
+
+  const h = stats(pts, "rh");
+  document.getElementById("v-rh").innerHTML = `${h.mean.toFixed(0)}<small>%</small>`;
+  document.getElementById("s-rh").innerHTML = `${state.res}<br>${h.lo.toFixed(0)}–${h.hi.toFixed(0)} %`;
+
+  const hours = pts.reduce((a, p) => a + (p.high_h || 0), 0);
+  const vh = document.getElementById("v-high");
+  vh.innerHTML = `${hours.toFixed(1)}<small>h</small>`;
+  vh.style.color = hours > 0 ? css("--bad") : css("--ok");
+  document.getElementById("s-high").innerHTML = `in range<br>${state.res === "daily" ? "per day" : "per hour"}`;
+
+  draw("c-co2", pts, { key: "co2", colourBy: co2Colour, refs: [800, 1200], fmt: v => Math.round(v) + " ppm" });
+  if (DATA.has_temp) draw("c-temp", pts, { key: "temp", colour: css("--temp"), fmt: v => v.toFixed(1) + " °C" });
+  draw("c-rh", pts, { key: "rh", colour: css("--green"), tickUnit: "%", fmt: v => v.toFixed(0) + " %" });
+  draw("c-high", pts, { key: "high_h", bars: true, zero: true, colour: css("--bad"), tickUnit: "h",
+                        fmt: v => (v * 60).toFixed(0) + " min above 1200 ppm" });
+}
+
+function wire(groupId, key) {
+  document.querySelectorAll(`#${groupId} button`).forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll(`#${groupId} button`).forEach(o => o.classList.remove("on"));
+    b.classList.add("on");
+    state[key] = b.dataset.v;
+    render();
+  }));
+}
+// No temperature data: drop the card, CO₂ takes the full width
+if (!DATA.has_temp) {
+  document.getElementById("card-temp").remove();
+  document.getElementById("card-co2").classList.add("wide");
+}
+
+wire("range", "range");
+wire("res", "res");
+
+// Logged-time counter (static: data are imported weekly, not streamed)
+const s = DATA.logged_s;
+document.getElementById("logged").textContent =
+  `${Math.floor(s / 86400)}d ${Math.floor(s % 86400 / 3600)}h ${Math.floor(s % 3600 / 60)}m`;
+const first = parse(DATA.first), last = parse(DATA.last);
+document.getElementById("period").textContent =
+  `${DATA.readings.toLocaleString("en-GB")} readings · ${fmtFull(first)} – ${fmtFull(last)} · last reading ${fmtTime(last)}`;
+
+// Tell the Weebly page how tall the dashboard is, so its iframe can fit it exactly
+function reportHeight() {
+  if (window.parent === window) return;
+  const h = Math.ceil(document.documentElement.getBoundingClientRect().height);
+  window.parent.postMessage({ type: "suf-dashboard-height", height: h }, "*");
+}
+
+render();
+reportHeight();
+let resizeTimer;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { render(); reportHeight(); }, 150);
+});
+window.addEventListener("load", reportHeight);
+</script>
+</body>
+</html>
